@@ -22,6 +22,10 @@ vim.schedule(function()
 	})
 
 	require("mini.ai").setup({
+		custom_textobjects = {
+			["$"] = require("mini.ai").gen_spec.pair("$", "$", { type = "greedy" }),
+			["4"] = require("mini.ai").gen_spec.pair("$", "$", { type = "greedy" }),
+		},
 		mappings = {
 			goto_left = "[",
 			goto_right = "]",
