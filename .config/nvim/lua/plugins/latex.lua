@@ -42,7 +42,6 @@ local function vimtex_toc_picker()
 		format = function(item)
 			return { { item.text, "VimtexTocSec" .. math.min(item.level, 4) } }
 		end,
-		layout = "left",
 		confirm = function(picker, item)
 			picker:close()
 			vim.cmd("edit " .. vim.fn.fnameescape(item.file))
@@ -58,9 +57,13 @@ vim.api.nvim_create_autocmd("FileType", {
  		vim.opt_local.textwidth = 80
  		vim.opt_local.formatoptions:remove("a") -- no auto-reflow
  		vim.opt_local.formatoptions:append("t") -- wrap text while typing
- 		vim.keymap.set("n", "<leader>lt", vimtex_toc_picker, {
- 			buffer = event.buf,
- 			desc = "Find LaTeX table of contents",
- 		})
- 	end,
+		vim.keymap.set("n", "<leader>lt", vimtex_toc_picker, {
+			buffer = event.buf,
+			desc = "Find LaTeX table of contents",
+		})
+		vim.keymap.set("n", "<leader>fs", vimtex_toc_picker, {
+			buffer = event.buf,
+			desc = "Find LaTeX table of contents",
+		})
+	end,
 })
