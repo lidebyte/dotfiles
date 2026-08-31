@@ -5,18 +5,155 @@ function s() {
 	kitty +kitten ssh "$@" || ssh "$@"
 }
 
+function _opencode_auth() {
+	local password_file="${OPENCODE_SERVER_ENV_FILE:-${HOME}/.config/opencode/server.env}"
+	local name
+	local value
+
+	if [[ ! -r "${password_file}" ]]; then
+		echo "OpenCode password file is not readable: ${password_file}" >&2
+		return 1
+	fi
+
+	while IFS='=' read -r name value; do
+		if [[ "${name}" == "OPENCODE_SERVER_PASSWORD" && -n "${value}" ]]; then
+			export OPENCODE_SERVER_PASSWORD="${value}"
+			return 0
+		fi
+	done < "${password_file}"
+
+	echo "OPENCODE_SERVER_PASSWORD is missing from ${password_file}" >&2
+	return 1
+}
+
+function _opencode_curl() {
+	_opencode_auth || return 1
+	local username="${OPENCODE_SERVER_USERNAME:-opencode}"
+	printf 'user = "%s:%s"\n' "${username}" "${OPENCODE_SERVER_PASSWORD}" | \
+		env -u LD_LIBRARY_PATH curl --config - "$@"
+}
+
 function ops() {
+	_opencode_auth || return 1
 	local port="${OPENCODE_PORT:-4096}"
 	opencode serve --hostname 127.0.0.1 --port "${port}" "$@"
 }
 
-function op() {
+function opactive() {
+	_opencode_auth || return 1
 	local port="${OPENCODE_PORT:-4096}"
 	local dir="${PWD:-$(pwd -P)}"
+	local status
+	local sessions
+
 	if [[ -d "/proc/${BASHPID}/cwd" ]]; then
 		dir="/proc/${BASHPID}/cwd"
 	fi
-	opencode attach "http://127.0.0.1:${port}" --dir "${dir}" "$@"
+
+	if ! status=$(_opencode_curl --fail --silent --show-error --get --data-urlencode "directory=${dir}" "http://127.0.0.1:${port}/session/status"); then
+		echo "OpenCode server status could not be queried." >&2
+		return 1
+	fi
+
+	if ! sessions=$(_opencode_curl --fail --silent --show-error --get --data-urlencode "directory=${dir}" --data-urlencode "limit=1000" "http://127.0.0.1:${port}/session"); then
+		echo "OpenCode sessions could not be queried." >&2
+		return 1
+	fi
+
+	printf '%s\0%s' "$status" "$sessions" | perl -MJSON::PP -e '
+		my ($status, $sessions) = split /\0/, do { local $/; <STDIN> }, 2;
+		$status = decode_json($status);
+		$sessions = decode_json($sessions);
+		my %sessions = map { $_->{id} => $_ } @$sessions;
+		my @active = grep { ($status->{$_}{type} // "idle") ne "idle" } keys %$status;
+		exit 0 unless @active;
+		print "STATE\tDIRECTORY\tSESSION\tTITLE\n";
+		for my $id (sort @active) {
+			my $session = $sessions{$id} // {};
+			printf "%s\t%s\t%s\t%s\n", $status->{$id}{type}, $session->{directory} // "<unknown>", $id, $session->{title} // "";
+		}
+	' || return 1
+}
+
+function oprestart() {
+	_opencode_auth || return 1
+	local port="${OPENCODE_PORT:-4096}"
+	local dir="${PWD:-$(pwd -P)}"
+	local status
+
+	if [[ -d "/proc/${BASHPID}/cwd" ]]; then
+		dir="/proc/${BASHPID}/cwd"
+	fi
+
+	if ! status=$(_opencode_curl --fail --silent --show-error --get --data-urlencode "directory=${dir}" "http://127.0.0.1:${port}/session/status"); then
+		echo "OpenCode server status could not be queried; refusing to restart."
+		return 1
+	fi
+
+	if [[ "$status" != "{}" ]]; then
+		echo "OpenCode has active agents; refusing to restart."
+		echo "$status"
+		return 1
+	fi
+
+	systemctl --user reload-or-restart opencode.service
+}
+
+function lbd() {
+	if [ -z "$(type -P lb-conda)" ]; then
+		if [ ! -f "/cvmfs/lhcb.cern.ch/lib/LbEnv" ]; then
+			echo "lb-conda command not available"
+			return 127
+		fi
+
+		local saved_args=("$@")
+		set --
+		source /cvmfs/lhcb.cern.ch/lib/LbEnv
+		set -- "${saved_args[@]}"
+	fi
+
+	command lb-conda default "$@"
+}
+
+function ganga_session() {
+	local here
+	local proxy
+
+	if [[ $# -gt 1 ]]; then
+		echo "Usage: ganga_session [GANGA_DIRECTORY]" >&2
+		return 2
+	fi
+
+	here=$(builtin cd -- "${1:-.}" && pwd) || return 1
+	proxy=${X509_USER_PROXY:-"${HOME}/.grid.proxy"}
+	if [[ ! -f ${proxy} ]]; then
+		echo "LHCb Grid proxy does not exist: ${proxy}" >&2
+		return 2
+	fi
+
+	/usr/bin/apptainer exec \
+		--bind /cvmfs:/cvmfs:ro \
+		--bind "${HOME}:${HOME}" \
+		--bind "${here}:${here}" \
+		--pwd "${here}" \
+		--env X509_USER_PROXY="${proxy}" \
+		/cvmfs/lhcb.cern.ch/containers/os-base/alma9-devel/prod/amd64/ \
+		bash -lc "source /cvmfs/lhcb.cern.ch/lib/LbEnv --sh && exec /cvmfs/lhcb.cern.ch/lib/bin/ganga -i"
+}
+
+function op() {
+	_opencode_auth || return 1
+	local port="${OPENCODE_PORT:-4096}"
+	local dir="${PWD:-$(pwd -P)}"
+	local tmux_env="${TMUX:-}"
+	local tmux_pane_env="${TMUX_PANE:-}"
+	if [[ -d "/proc/${BASHPID}/cwd" ]]; then
+		dir="/proc/${BASHPID}/cwd"
+	fi
+	TMUX="${tmux_env}" TMUX_PANE="${tmux_pane_env}" \
+		opencode attach "http://127.0.0.1:${port}" --dir "${dir}" \
+			--username "${OPENCODE_SERVER_USERNAME:-opencode}" \
+			--password "${OPENCODE_SERVER_PASSWORD}" "$@"
 }
 
 function fssh() {
@@ -317,6 +454,43 @@ awk '\''{
 head -n -5 |
 sed "1{/^$/d};2{/^$/d}"
 '
+}
+
+# Print the configured stdout, stderr, and event-log files for a Condor cluster.
+function clogs() {
+	if [[ $# -ne 1 || ! $1 =~ ^[0-9]+$ ]]; then
+		echo "Usage: clogs <cluster-id>" >&2
+		return 2
+	fi
+
+	local cluster_id="$1"
+	local query=(condor_q "${cluster_id}" -limit 1)
+	local out err log iwd
+
+	iwd=$("${query[@]}" -af Iwd 2>/dev/null)
+	if [[ -z $iwd ]]; then
+		query=(condor_history "${cluster_id}" -limit 1)
+		iwd=$("${query[@]}" -af Iwd 2>/dev/null)
+	fi
+	if [[ -z $iwd ]]; then
+		echo "Condor cluster not found: ${cluster_id}" >&2
+		return 1
+	fi
+
+	out=$("${query[@]}" -af Out 2>/dev/null)
+	err=$("${query[@]}" -af Err 2>/dev/null)
+	log=$("${query[@]}" -af Log 2>/dev/null)
+
+	# Condor interprets relative output paths relative to the job's initial working directory.
+	local path
+	for path in out err log; do
+		case ${!path} in
+			""|/*|*://*) ;;
+			*) printf -v "$path" '%s/%s' "${iwd%/}" "${!path}" ;;
+		esac
+	done
+
+	printf 'Out: %s\nErr: %s\nLog: %s\n' "$out" "$err" "$log"
 }
 
 function yazi() {
