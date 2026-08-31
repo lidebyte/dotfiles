@@ -10,6 +10,8 @@
 local.sh
 .config/astronvim
 .config/yazi/scripts
+!.config/yazi/scripts/
+!.config/yazi/scripts/**
 .config/jellyfin
 install
 .config/neofetch
