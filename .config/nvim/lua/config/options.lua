@@ -20,8 +20,8 @@ vim.opt.number = true
 vim.opt.signcolumn = 'no'
 vim.opt.numberwidth = 4
 
--- enable soft line wrap
-vim.opt.wrap = true
+-- Enable soft line wrap only in filetypes that opt in locally.
+vim.opt.wrap = false
 
 -- only one statusline
 vim.opt.laststatus = 3
@@ -36,6 +36,18 @@ vim.opt.showmode = false
 --  Schedule the setting after `UiEnter` because it can increase startup-time.
 --  Remove this option if you want your OS clipboard to remain independent.
 --  See `:help 'clipboard'`
+vim.g.clipboard = {
+  name = 'tmux',
+  copy = {
+    ['+'] = { 'tmux', 'load-buffer', '-w', '-' },
+    ['*'] = { 'tmux', 'load-buffer', '-w', '-' },
+  },
+  paste = {
+    ['+'] = { 'tmux', 'save-buffer', '-' },
+    ['*'] = { 'tmux', 'save-buffer', '-' },
+  },
+  cache_enabled = 1,
+}
 vim.schedule(function()
   vim.opt.clipboard = 'unnamedplus'
 end)

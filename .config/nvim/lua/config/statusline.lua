@@ -132,6 +132,7 @@ local function setup_highlights()
 	api.nvim_set_hl(0, "StatuslineSearch", { fg = palette.sky })
 	api.nvim_set_hl(0, "StatuslineMacroIcon", { fg = palette.maroon })
 	api.nvim_set_hl(0, "StatuslineMacroText", { fg = palette.maroon, bold = true })
+	api.nvim_set_hl(0, "StatuslineYazi", { fg = palette.yellow, bold = true })
 	api.nvim_set_hl(0, "StatuslineReadonly", { fg = palette.text })
 	api.nvim_set_hl(0, "StatuslineModeNormal", { fg = dim_color, bg = palette.base, bold = true })
 	api.nvim_set_hl(0, "StatuslineModeInsert", { fg = palette.blue, bg = palette.base, bold = true })
@@ -351,6 +352,13 @@ local function macro_segment()
 	return with_hl("StatuslineMacroIcon", "󰻃 ") .. with_hl("StatuslineMacroText", statusline_escape(reg))
 end
 
+local function yazi_segment()
+	if vim.env.NVIM_FROM_YAZI ~= "1" then
+		return ""
+	end
+	return with_hl("StatuslineYazi", "󰇥 Yazi") .. " "
+end
+
 local function showcmd_segment()
 	if vim.o.cmdheight ~= 0 then
 		return ""
@@ -425,6 +433,7 @@ function M.render()
 	local parts = {
 		with_hl(mode_groups[vim.fn.mode(1):sub(1, 1)] or "StatuslineModeNormal", "▌"),
 		buf_state.file or "",
+		yazi_segment(),
 		buf_state.git or "",
 		buf_state.diagnostics or "",
 		state.overseer,

@@ -171,7 +171,7 @@ if not vim.g.marksman_lsp_enabled then
 	end)
 end
 
-vim.o.wrap = false
+vim.opt_local.wrap = true
 vim.opt.conceallevel = 2
 vim.keymap.set('n', 'gx', function()
   local line = vim.fn.getline '.'
