@@ -2,7 +2,7 @@
 
 set -e
 
-max_attempts=${MAX_ATTEMPTS:-1}
+max_attempts=${MAX_ATTEMPTS:-100}
 retry_delay_seconds=${RETRY_DELAY_SECONDS:-1}
 history_grace_polls=${CONDOR_HISTORY_GRACE_POLLS:-12}
 bad_nodes_file=${CONDOR_BAD_NODES_FILE:-logs/bad_condor_nodes.txt}
